@@ -150,7 +150,7 @@
 
 /** Set this to 0 to drop support for HTTP/0.9 clients (to save some bytes) */
 #ifndef LWIP_HTTPD_SUPPORT_V09
-#define LWIP_HTTPD_SUPPORT_V09              1
+#define LWIP_HTTPD_SUPPORT_V09              0
 #endif
 
 /** Set this to 1 to enable HTTP/1.1 persistent connections.
@@ -360,8 +360,8 @@ struct http_state {
 #if LWIP_HTTPD_KILL_OLD_ON_CONNECTIONS_EXCEEDED
   struct http_state *next;
 #endif /* LWIP_HTTPD_KILL_OLD_ON_CONNECTIONS_EXCEEDED */
-  struct fs_file file_handle;
-  struct fs_file *handle;
+  struct httpd_fs_file file_handle;
+  struct httpd_fs_file *handle;
   char *file;       /* Pointer to first unsent byte in buf. */
 
   u8_t is_websocket;
@@ -409,7 +409,7 @@ struct http_state {
 static err_t http_close_conn(struct tcp_pcb *pcb, struct http_state *hs);
 static err_t http_close_or_abort_conn(struct tcp_pcb *pcb, struct http_state *hs, u8_t abort_conn);
 static err_t http_find_file(struct http_state *hs, const char *uri, int is_09);
-static err_t http_init_file(struct http_state *hs, struct fs_file *file, int is_09, const char *uri, u8_t tag_check);
+static err_t http_init_file(struct http_state *hs, struct httpd_fs_file *file, int is_09, const char *uri, u8_t tag_check);
 static err_t http_poll(void *arg, struct tcp_pcb *pcb);
 
 static err_t websocket_send_close(struct tcp_pcb *pcb);
@@ -573,7 +573,7 @@ http_state_eof(struct http_state *hs)
     LWIP_DEBUGF(HTTPD_DEBUG_TIMING, ("httpd: needed %"U32_F" ms to send file of %d bytes -> %"U32_F" bytes/sec\n",
       ms_needed, hs->handle->len, ((((u32_t)hs->handle->len) * 10) / needed)));
 #endif /* LWIP_HTTPD_TIMING */
-    fs_close(hs->handle);
+    httpd_fs_close(hs->handle);
     hs->handle = NULL;
   }
 #if LWIP_HTTPD_DYNAMIC_FILE_READ
@@ -689,7 +689,7 @@ http_close_or_abort_conn(struct tcp_pcb *pcb, struct http_state *hs, u8_t abort_
        ) {
       /* make sure the post code knows that the connection is closed */
       http_post_response_filename[0] = 0;
-      httpd_post_finished(hs, http_post_response_filename, LWIP_HTTPD_POST_MAX_RESPONSE_URI_LEN);
+      httpd_websocket_post_finished(hs, http_post_response_filename, LWIP_HTTPD_POST_MAX_RESPONSE_URI_LEN);
     }
   }
 #endif /* LWIP_HTTPD_SUPPORT_POST*/
@@ -1076,7 +1076,7 @@ http_check_eof(struct tcp_pcb *pcb, struct http_state *hs)
     http_eof(pcb, hs);
     return 0;
   }
-  if (fs_bytes_left(hs->handle) <= 0) {
+  if (httpd_fs_bytes_left(hs->handle) <= 0) {
     /* We reached the end of the file so this request is done. */
     LWIP_DEBUGF(HTTPD_DEBUG, ("End of file.\n"));
     http_eof(pcb, hs);
@@ -1110,9 +1110,9 @@ http_check_eof(struct tcp_pcb *pcb, struct http_state *hs)
   LWIP_DEBUGF(HTTPD_DEBUG, ("Trying to read %d bytes.\n", count));
 
 #if LWIP_HTTPD_FS_ASYNC_READ
-  count = fs_read_async(hs->handle, hs->buf, count, http_continue, hs);
+  count = httpd_fs_read_async(hs->handle, hs->buf, count, http_continue, hs);
 #else /* LWIP_HTTPD_FS_ASYNC_READ */
-  count = fs_read(hs->handle, hs->buf, count);
+  count = httpd_fs_read(hs->handle, hs->buf, count);
 #endif /* LWIP_HTTPD_FS_ASYNC_READ */
   if (count < 0) {
     if (count == FS_READ_DELAYED) {
@@ -1564,7 +1564,7 @@ http_send(struct tcp_pcb *pcb, struct http_state *hs)
 #if LWIP_HTTPD_FS_ASYNC_READ
   /* Check if we are allowed to read from this file.
      (e.g. SSI might want to delay sending until data is available) */
-  if (!fs_is_file_ready(hs->handle, http_continue, hs)) {
+  if (!httpd_fs_is_file_ready(hs->handle, http_continue, hs)) {
     return 0;
   }
 #endif /* LWIP_HTTPD_FS_ASYNC_READ */
@@ -1596,7 +1596,7 @@ http_send(struct tcp_pcb *pcb, struct http_state *hs)
     data_to_send = http_send_data_nonssi(pcb, hs);
   }
 
-  if((hs->left == 0) && (fs_bytes_left(hs->handle) <= 0)) {
+  if((hs->left == 0) && (httpd_fs_bytes_left(hs->handle) <= 0)) {
     /* We reached the end of the file so this request is done.
      * This adds the FIN flag right into the last data segment. */
     LWIP_DEBUGF(HTTPD_DEBUG, ("End of file.\n"));
@@ -1631,11 +1631,11 @@ http_find_error_file(struct http_state *hs, u16_t error_nr)
     uri2 = "/400.htm";
     uri3 = "/400.shtml";
   }
-  err = fs_open(&hs->file_handle, uri1);
+  err = httpd_fs_open(&hs->file_handle, uri1);
   if (err != ERR_OK) {
-    err = fs_open(&hs->file_handle, uri2);
+    err = httpd_fs_open(&hs->file_handle, uri2);
     if (err != ERR_OK) {
-      err = fs_open(&hs->file_handle, uri3);
+      err = httpd_fs_open(&hs->file_handle, uri3);
       if (err != ERR_OK) {
         LWIP_DEBUGF(HTTPD_DEBUG, ("Error page for error %"U16_F" not found\n",
           error_nr));
@@ -1656,21 +1656,21 @@ http_find_error_file(struct http_state *hs, u16_t error_nr)
  * @param uri pointer that receives the actual file name URI
  * @return file struct for the error page or NULL no matching file was found
  */
-static struct fs_file *
+static struct httpd_fs_file *
 http_get_404_file(struct http_state *hs, const char **uri)
 {
   err_t err;
 
   *uri = "/404.html";
-  err = fs_open(&hs->file_handle, *uri);
+  err = httpd_fs_open(&hs->file_handle, *uri);
   if (err != ERR_OK) {
     /* 404.html doesn't exist. Try 404.htm instead. */
     *uri = "/404.htm";
-    err = fs_open(&hs->file_handle, *uri);
+    err = httpd_fs_open(&hs->file_handle, *uri);
     if (err != ERR_OK) {
       /* 404.htm doesn't exist either. Try 404.shtml instead. */
       *uri = "/404.shtml";
-      err = fs_open(&hs->file_handle, *uri);
+      err = httpd_fs_open(&hs->file_handle, *uri);
       if (err != ERR_OK) {
         /* 404.htm doesn't exist either. Indicate to the caller that it should
          * send back a default 404 page.
@@ -1689,8 +1689,8 @@ static err_t
 http_handle_post_finished(struct http_state *hs)
 {
 #if LWIP_HTTPD_POST_MANUAL_WND
-  /* Prevent multiple calls to httpd_post_finished, since it might have already
-     been called before from httpd_post_data_recved(). */
+  /* Prevent multiple calls to httpd_websocket_post_finished, since it might have already
+     been called before from httpd_websocket_post_data_recved(). */
   if (hs->post_finished) {
     return ERR_OK;
   }
@@ -1699,7 +1699,7 @@ http_handle_post_finished(struct http_state *hs)
   /* application error or POST finished */
   /* NULL-terminate the buffer */
   http_post_response_filename[0] = 0;
-  httpd_post_finished(hs, http_post_response_filename, LWIP_HTTPD_POST_MAX_RESPONSE_URI_LEN);
+  httpd_websocket_post_finished(hs, http_post_response_filename, LWIP_HTTPD_POST_MAX_RESPONSE_URI_LEN);
   return http_find_file(hs, http_post_response_filename, 0);
 }
 
@@ -1723,7 +1723,7 @@ http_post_rxpbuf(struct http_state *hs, struct pbuf *p)
   } else {
     hs->post_content_len_left -= p->tot_len;
   }
-  err = httpd_post_receive_data(hs, p);
+  err = httpd_websocket_post_receive_data(hs, p);
   if ((err != ERR_OK) || (hs->post_content_len_left == 0)) {
 #if LWIP_HTTPD_SUPPORT_POST && LWIP_HTTPD_POST_MANUAL_WND
     if (hs->unrecved_bytes != 0) {
@@ -1779,7 +1779,7 @@ http_post_request(struct pbuf **inp, struct http_state *hs,
           u16_t hdr_data_len = LWIP_MIN(data_len, crlfcrlf + 4 - hdr_start_after_uri);
           u8_t post_auto_wnd = 1;
           http_post_response_filename[0] = 0;
-          err = httpd_post_begin(hs, uri, hdr_start_after_uri, hdr_data_len, content_len,
+          err = httpd_websocket_post_begin(hs, uri, hdr_start_after_uri, hdr_data_len, content_len,
             http_post_response_filename, LWIP_HTTPD_POST_MAX_RESPONSE_URI_LEN, &post_auto_wnd);
           if (err == ERR_OK) {
             /* try to pass in data of the first pbuf(s) */
@@ -1839,11 +1839,11 @@ http_post_request(struct pbuf **inp, struct http_state *hs,
  * This can be used to throttle data reception (e.g. when received data is
  * programmed to flash and data is received faster than programmed).
  *
- * @param connection A connection handle passed to httpd_post_begin for which
- *        httpd_post_finished has *NOT* been called yet!
+ * @param connection A connection handle passed to httpd_websocket_post_begin for which
+ *        httpd_websocket_post_finished has *NOT* been called yet!
  * @param recved_len Length of data received (for window update)
  */
-void httpd_post_data_recved(void *connection, u16_t recved_len)
+void httpd_websocket_post_data_recved(void *connection, u16_t recved_len)
 {
   struct http_state *hs = (struct http_state*)connection;
   if (hs != NULL) {
@@ -1852,7 +1852,7 @@ void httpd_post_data_recved(void *connection, u16_t recved_len)
       if (hs->unrecved_bytes >= recved_len) {
         hs->unrecved_bytes -= recved_len;
       } else {
-        LWIP_DEBUGF(HTTPD_DEBUG | LWIP_DBG_LEVEL_WARNING, ("httpd_post_data_recved: recved_len too big\n"));
+        LWIP_DEBUGF(HTTPD_DEBUG | LWIP_DBG_LEVEL_WARNING, ("httpd_websocket_post_data_recved: recved_len too big\n"));
         len = (u16_t)hs->unrecved_bytes;
         hs->unrecved_bytes = 0;
       }
@@ -1875,7 +1875,7 @@ void httpd_post_data_recved(void *connection, u16_t recved_len)
 
 #if LWIP_HTTPD_FS_ASYNC_READ
 /** Try to send more data if file has been blocked before
- * This is a callback function passed to fs_read_async().
+ * This is a callback function passed to httpd_fs_read_async().
  */
 static void
 http_continue(void *connection)
@@ -2147,7 +2147,7 @@ static err_t
 http_find_file(struct http_state *hs, const char *uri, int is_09)
 {
   size_t loop;
-  struct fs_file *file = NULL;
+  struct httpd_fs_file *file = NULL;
   char *params;
   err_t err;
 #if LWIP_HTTPD_CGI
@@ -2166,7 +2166,7 @@ http_find_file(struct http_state *hs, const char *uri, int is_09)
        that exists. */
     for (loop = 0; loop < NUM_DEFAULT_FILENAMES; loop++) {
       LWIP_DEBUGF(HTTPD_DEBUG | LWIP_DBG_TRACE, ("Looking for %s...\n", g_psDefaultFilenames[loop].name));
-      err = fs_open(&hs->file_handle, (char *)g_psDefaultFilenames[loop].name);
+      err = httpd_fs_open(&hs->file_handle, (char *)g_psDefaultFilenames[loop].name);
       uri = (char *)g_psDefaultFilenames[loop].name;
       if(err == ERR_OK) {
         file = &hs->file_handle;
@@ -2214,7 +2214,7 @@ http_find_file(struct http_state *hs, const char *uri, int is_09)
 
     LWIP_DEBUGF(HTTPD_DEBUG | LWIP_DBG_TRACE, ("Opening %s\n", uri));
 
-    err = fs_open(&hs->file_handle, uri);
+    err = httpd_fs_open(&hs->file_handle, uri);
     if (err == ERR_OK) {
        file = &hs->file_handle;
     } else {
@@ -2249,7 +2249,7 @@ http_find_file(struct http_state *hs, const char *uri, int is_09)
  *         another err_t otherwise
  */
 static err_t
-http_init_file(struct http_state *hs, struct fs_file *file, int is_09, const char *uri, u8_t tag_check)
+http_init_file(struct http_state *hs, struct httpd_fs_file *file, int is_09, const char *uri, u8_t tag_check)
 {
   if (file != NULL) {
     /* file opened, initialise struct http_state */
@@ -2697,7 +2697,7 @@ httpd_init_addr(const ip_addr_t *local_addr)
  * Initialize the httpd: set up a listening PCB and bind it to the defined port
  */
 void
-httpd_init(void)
+httpd_websocket_init(void)
 {
 #if HTTPD_USE_MEM_POOL
   LWIP_ASSERT("memp_sizes[MEMP_HTTPD_STATE] >= sizeof(http_state)",

@@ -35,7 +35,7 @@
 #include "fsdata.h"
 #include <string.h>
 
-/** Set this to 1 to include "fsdata_custom.c" instead of "fsdata.c" for the
+/** Set this to 1 to include "httpd_fsdata_custom.c" instead of "fsdata.c" for the
  * file system (to prevent changing the file included in CVS) */
 #ifndef HTTPD_USE_CUSTOM_FSDATA
 #define HTTPD_USE_CUSTOM_FSDATA 0
@@ -50,26 +50,26 @@
 /*-----------------------------------------------------------------------------------*/
 
 #if LWIP_HTTPD_CUSTOM_FILES
-int fs_open_custom(struct fs_file *file, const char *name);
-void fs_close_custom(struct fs_file *file);
+int httpd_fs_open_custom(struct httpd_fs_file *file, const char *name);
+void httpd_fs_close_custom(struct httpd_fs_file *file);
 #if LWIP_HTTPD_FS_ASYNC_READ
-u8_t fs_canread_custom(struct fs_file *file);
-u8_t fs_wait_read_custom(struct fs_file *file, fs_wait_cb callback_fn, void *callback_arg);
+u8_t httpd_fs_canread_custom(struct httpd_fs_file *file);
+u8_t httpd_fs_wait_read_custom(struct httpd_fs_file *file, httpd_fs_wait_cb callback_fn, void *callback_arg);
 #endif /* LWIP_HTTPD_FS_ASYNC_READ */
 #endif /* LWIP_HTTPD_CUSTOM_FILES */
 
 /*-----------------------------------------------------------------------------------*/
 err_t
-fs_open(struct fs_file *file, const char *name)
+httpd_fs_open(struct httpd_fs_file *file, const char *name)
 {
-  const struct fsdata_file *f;
+  const struct httpd_fsdata_file *f;
 
   if ((file == NULL) || (name == NULL)) {
      return ERR_ARG;
   }
 
 #if LWIP_HTTPD_CUSTOM_FILES
-  if (fs_open_custom(file, name)) {
+  if (httpd_fs_open_custom(file, name)) {
     file->is_custom_file = 1;
     return ERR_OK;
   }
@@ -88,7 +88,7 @@ fs_open(struct fs_file *file, const char *name)
       file->chksum = f->chksum;
 #endif /* HTTPD_PRECALCULATED_CHECKSUM */
 #if LWIP_HTTPD_FILE_STATE
-      file->state = fs_state_init(file, name);
+      file->state = httpd_fs_state_init(file, name);
 #endif /* #if LWIP_HTTPD_FILE_STATE */
       return ERR_OK;
     }
@@ -99,15 +99,15 @@ fs_open(struct fs_file *file, const char *name)
 
 /*-----------------------------------------------------------------------------------*/
 void
-fs_close(struct fs_file *file)
+httpd_fs_close(struct httpd_fs_file *file)
 {
 #if LWIP_HTTPD_CUSTOM_FILES
   if (file->is_custom_file) {
-    fs_close_custom(file);
+    httpd_fs_close_custom(file);
   }
 #endif /* LWIP_HTTPD_CUSTOM_FILES */
 #if LWIP_HTTPD_FILE_STATE
-  fs_state_free(file, file->state);
+  httpd_fs_state_free(file, file->state);
 #endif /* #if LWIP_HTTPD_FILE_STATE */
   LWIP_UNUSED_ARG(file);
 }
@@ -115,10 +115,10 @@ fs_close(struct fs_file *file)
 #if LWIP_HTTPD_DYNAMIC_FILE_READ
 #if LWIP_HTTPD_FS_ASYNC_READ
 int
-fs_read_async(struct fs_file *file, char *buffer, int count, fs_wait_cb callback_fn, void *callback_arg)
+httpd_fs_read_async(struct httpd_fs_file *file, char *buffer, int count, httpd_fs_wait_cb callback_fn, void *callback_arg)
 #else /* LWIP_HTTPD_FS_ASYNC_READ */
 int
-fs_read(struct fs_file *file, char *buffer, int count)
+httpd_fs_read(struct httpd_fs_file *file, char *buffer, int count)
 #endif /* LWIP_HTTPD_FS_ASYNC_READ */
 {
   int read;
@@ -128,8 +128,8 @@ fs_read(struct fs_file *file, char *buffer, int count)
   }
 #if LWIP_HTTPD_FS_ASYNC_READ
 #if LWIP_HTTPD_CUSTOM_FILES
-  if (!fs_canread_custom(file)) {
-    if (fs_wait_read_custom(file, callback_fn, callback_arg)) {
+  if (!httpd_fs_canread_custom(file)) {
+    if (httpd_fs_wait_read_custom(file, callback_fn, callback_arg)) {
       return FS_READ_DELAYED;
     }
   }
@@ -153,13 +153,13 @@ fs_read(struct fs_file *file, char *buffer, int count)
 /*-----------------------------------------------------------------------------------*/
 #if LWIP_HTTPD_FS_ASYNC_READ
 int
-fs_is_file_ready(struct fs_file *file, fs_wait_cb callback_fn, void *callback_arg)
+httpd_fs_is_file_ready(struct httpd_fs_file *file, httpd_fs_wait_cb callback_fn, void *callback_arg)
 {
   if (file != NULL) {
 #if LWIP_HTTPD_FS_ASYNC_READ
 #if LWIP_HTTPD_CUSTOM_FILES
-    if (!fs_canread_custom(file)) {
-      if (fs_wait_read_custom(file, callback_fn, callback_arg)) {
+    if (!httpd_fs_canread_custom(file)) {
+      if (httpd_fs_wait_read_custom(file, callback_fn, callback_arg)) {
         return 0;
       }
     }
@@ -174,7 +174,7 @@ fs_is_file_ready(struct fs_file *file, fs_wait_cb callback_fn, void *callback_ar
 #endif /* LWIP_HTTPD_FS_ASYNC_READ */
 /*-----------------------------------------------------------------------------------*/
 int
-fs_bytes_left(struct fs_file *file)
+httpd_fs_bytes_left(struct httpd_fs_file *file)
 {
   return file->len - file->index;
 }

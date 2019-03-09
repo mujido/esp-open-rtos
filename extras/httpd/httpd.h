@@ -181,7 +181,7 @@ void http_set_ssi_handler(tSSIHandler pfnSSIHandler,
 /** Called when a POST request has been received. The application can decide
  * whether to accept it or not.
  *
- * @param connection Unique connection identifier, valid until httpd_post_end
+ * @param connection Unique connection identifier, valid until httpd_websocket_post_end
  *        is called.
  * @param uri The HTTP header URI receiving the POST request.
  * @param http_request The raw HTTP request (the first packet, normally).
@@ -191,12 +191,12 @@ void http_set_ssi_handler(tSSIHandler pfnSSIHandler,
  *        request
  * @param response_uri_len Size of the 'response_uri' buffer.
  * @param post_auto_wnd Set this to 0 to let the callback code handle window
- *        updates by calling 'httpd_post_data_recved' (to throttle rx speed)
+ *        updates by calling 'httpd_websocket_post_data_recved' (to throttle rx speed)
  *        default is 1 (httpd handles window updates automatically)
  * @return ERR_OK: Accept the POST request, data may be passed in
  *         another err_t: Deny the POST request, send back 'bad request'.
  */
-err_t httpd_post_begin(void *connection, const char *uri, const char *http_request,
+err_t httpd_websocket_post_begin(void *connection, const char *uri, const char *http_request,
                        u16_t http_request_len, int content_len, char *response_uri,
                        u16_t response_uri_len, u8_t *post_auto_wnd);
 
@@ -208,7 +208,7 @@ err_t httpd_post_begin(void *connection, const char *uri, const char *http_reque
  * @return ERR_OK: Data accepted.
  *         another err_t: Data denied, http_post_get_response_uri will be called.
  */
-err_t httpd_post_receive_data(void *connection, struct pbuf *p);
+err_t httpd_websocket_post_receive_data(void *connection, struct pbuf *p);
 
 /** Called when all data is received or when the connection is closed.
  * The application must return the filename/URI of a file to send in response
@@ -219,14 +219,14 @@ err_t httpd_post_receive_data(void *connection, struct pbuf *p);
  * @param response_uri Filename of response file, to be filled when denying the request
  * @param response_uri_len Size of the 'response_uri' buffer.
  */
-void httpd_post_finished(void *connection, char *response_uri, u16_t response_uri_len);
+void httpd_websocket_post_finished(void *connection, char *response_uri, u16_t response_uri_len);
 
 #ifndef LWIP_HTTPD_POST_MANUAL_WND
 #define LWIP_HTTPD_POST_MANUAL_WND  0
 #endif
 
 #if LWIP_HTTPD_POST_MANUAL_WND
-void httpd_post_data_recved(void *connection, u16_t recved_len);
+void httpd_websocket_post_data_recved(void *connection, u16_t recved_len);
 #endif /* LWIP_HTTPD_POST_MANUAL_WND */
 
 #endif /* LWIP_HTTPD_SUPPORT_POST */
@@ -258,6 +258,6 @@ err_t websocket_write(struct tcp_pcb *pcb, const uint8_t *data, uint16_t len, ui
  */
 void websocket_register_callbacks(tWsOpenHandler ws_open_cb, tWsHandler ws_cb);
 
-void httpd_init(void);
+void httpd_websocket_init(void);
 
 #endif /* __HTTPD_H__ */

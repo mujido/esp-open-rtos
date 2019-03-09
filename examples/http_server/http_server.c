@@ -173,7 +173,7 @@ void httpd_task(void *pvParameters)
             sizeof (pcConfigSSITags) / sizeof (pcConfigSSITags[0]));
     websocket_register_callbacks((tWsOpenHandler) websocket_open_cb,
             (tWsHandler) websocket_cb);
-    httpd_init();
+    httpd_websocket_init();
 
     for (;;);
 }
